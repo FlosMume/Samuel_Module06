@@ -8,7 +8,11 @@ library_name: peft
 <!-- Provide a quick summary of what the model is/does. -->
 
 ## Folder structure
-Samuel_Module06/ └── FlosMume/ └── llama_sft_model/ ├── checkpoint-78/ ├── README.md └── adapter_config.json
+Samuel_Module06/ 
+        └── FlosMume/ 
+              └── llama_sft_model
+                        └── checkpoint-78/ 
+                              └── README.md 
 
 ## Model Details
 
