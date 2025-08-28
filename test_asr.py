@@ -1,86 +1,118 @@
 # test_asr.py - Test Speech Recognition with Specific Microphone
 
 import os
-
-# Get the current working directory
-cwd = os.getcwd()
-print("Current Working Directory:", cwd)
-
-import speech_recognition as sr
-
-# === STEP 1: List all available microphones ===
-print("🎤 Available Microphones:")
-print("------------------------")
-mic_list = sr.Microphone.list_microphone_names()
-for index, name in enumerate(mic_list):
-    print(f"  [{index}] {name}")
-
-print("\n")
-
-# === STEP 2: Choose a microphone (set index manually) ===
-# 👇 Change this number to the index of your desired mic
-TARGET_MIC_INDEX = 11  # ← Change this to your preferred mic index
-
-# Optional: Validate index
-if TARGET_MIC_INDEX >= len(mic_list):
-    print(f"❌ Error: Microphone index {TARGET_MIC_INDEX} is out of range!")
-    exit(1)
-
-print(f"🎙️  Using Microphone [{TARGET_MIC_INDEX}]: {mic_list[TARGET_MIC_INDEX]}")
-print("Say something...")
-
-# === STEP 3: Use the selected mic ===
-r = sr.Recognizer()
-with sr.Microphone(device_index=TARGET_MIC_INDEX, sample_rate = 16000, chunk_size=1024) as source:
-    print("Say something...")    
-    r.adjust_for_ambient_noise(source)  # Reduce background noise
-    # Audio captured in memory
-    audio = r.listen(source, timeout=5, phrase_time_limit=300) # Listen with timeout and phrase limit
-
-# === 🔽 SAVE THE AUDIO TO A FILE 🔽 ===
-with open("recorded_audio.wav", "wb") as f:
-    f.write(audio.get_wav_data())
-
-print("✅ Audio saved as 'recorded_audio.wav'")
-
-
-with open("Conference.wav", "rb") as f:
-    audio_data = sr.AudioFile(f)
-    with audio_data as source:
-        audio = r.record(source)
-    text = r.recognize_google(audio)
-    print(text)
-print("✅ Audio 'Conference.wav'") 
-
 import wave
-with wave.open("recorded_audio.wav", "r") as f:
-    print("Channels:", f.getnchannels())
-    print("Sample width (bytes):", f.getsampwidth())
-    print("Frame rate (sample rate):", f.getframerate())
-    print("Number of frames:", f.getnframes())
-
+import speech_recognition as sr
 from pydub import AudioSegment
 
-# Load the recorded audio
-audio_file = AudioSegment.from_wav("recorded_audio.wav")
 
-# Convert to mono and set frame rate to 16kHz
-audio_file = audio_file.set_frame_rate(16000).set_channels(1)
-
-# Export as raw audio data for Google
-wav_data = audio_file.raw_data
-sample_rate = audio_file.frame_rate
-sample_width = audio_file.sample_width  # Usually 2 for 16-bit
-
-# Create new AudioData object
-audio = sr.AudioData(wav_data, sample_rate, sample_width)
+def print_intro():
+    """Print current working directory and available microphones."""
+    print("Current Working Directory:", os.getcwd())
+    print("\n🎤 Available Microphones:")
+    print("------------------------")
+    mic_list = sr.Microphone.list_microphone_names()
+    for index, name in enumerate(mic_list):
+        print(f"  [{index}] {name}")
+    return mic_list
 
 
-# === STEP 4: Recognize speech ===
-try:
-    text = r.recognize_google(audio)
-    print("✅ You said:", text)
-except sr.UnknownValueError:
-    print("❌ Could not understand the audio")
-except sr.RequestError as e:
-    print(f"❌ Could not request results from Google Speech Recognition service; {e}")
+def select_microphone(mic_list, target_index):
+    """Validate and return the selected microphone."""
+    if target_index >= len(mic_list):
+        print(f"❌ Error: Microphone index {target_index} is out of range!")
+        exit(1)
+
+    print(f"🎙️  Using Microphone [{target_index}]: {mic_list[target_index]}")
+    return target_index
+
+
+def record_audio(mic_index, output_file="recorded_audio.wav"):
+    """Record audio from the specified microphone and save to file."""
+    print("Say something...")
+    recognizer = sr.Recognizer()
+
+    recognizer.phrase_threshold = 1.0  # Wait up to 1 second of silence before ending phrase
+    recognizer.non_speaking_duration = 1.0  # Treat <1s silence as part of same phrase
+
+    with sr.Microphone(device_index=mic_index, sample_rate=16000, chunk_size=1024) as source:
+        print("Adjusting for ambient noise... Please wait.")
+        recognizer.adjust_for_ambient_noise(source, duration=1)
+
+        print("🎤 Say something (I'm listening for up to 10 seconds)...")
+        try:
+            audio_data = recognizer.listen(source, timeout=None, phrase_time_limit=None, phrase_threshold=1.0)
+        except sr.WaitTimeoutError:
+            print("❌ Listening timed out.")
+            exit(1)
+
+        print("✅ Recording finished. Saving audio...")
+        with open(output_file, "wb") as f:
+            f.write(audio_data.get_wav_data())
+
+    print(f"✅ Audio saved as '{output_file}'")
+    return output_file
+
+
+def analyze_wav_file(file_path):
+    """Print basic WAV file info."""
+    print("\n🔍 Analyzing WAV file...")
+    with wave.open(file_path, "r") as f:
+        print("Channels:", f.getnchannels())
+        print("Sample width (bytes):", f.getsampwidth())
+        print("Frame rate (sample rate):", f.getframerate())
+        print("Number of frames:", f.getnframes())
+
+
+def clean_audio_for_google(input_file, output_file="clean_for_google.wav"):
+    """Convert audio to mono, 16kHz for optimal Google ASR compatibility."""
+    print(f"🧹 Cleaning audio: converting {input_file} to mono 16kHz...")
+    audio = AudioSegment.from_wav(input_file)
+    audio = audio.set_frame_rate(16000).set_channels(1)
+    audio.export(output_file, format="wav")
+    print(f"✅ Cleaned audio saved as '{output_file}'")
+    return output_file
+
+
+def transcribe_with_google(audio_file):
+    """Transcribe cleaned audio using Google Web Speech API."""
+    print("🧠 Sending to Google Speech Recognition...")
+    recognizer = sr.Recognizer()
+    with sr.AudioFile(audio_file) as source:
+        audio_data = recognizer.record(source)
+        try:
+            text = recognizer.recognize_google(audio_data)
+            print("✅ Google heard:", text)
+            return text
+        except sr.UnknownValueError:
+            print("❌ Google couldn't understand the audio.")
+        except sr.RequestError as e:
+            print(f"❌ Could not request results from Google service; {e}")
+    return None
+
+
+def main():
+    # === STEP 1: List microphones and select one ===
+    mic_list = print_intro()
+
+    # 👇 Set your desired microphone index here
+    TARGET_MIC_INDEX = 3  # ← Change this to your preferred mic index
+
+    # === STEP 2: Validate and select microphone ===
+    selected_index = select_microphone(mic_list, TARGET_MIC_INDEX)
+
+    # === STEP 3: Record audio ===
+    raw_audio_file = record_audio(selected_index)
+
+    # === STEP 4: Analyze raw recording ===
+    analyze_wav_file(raw_audio_file)
+
+    # === STEP 5: Clean audio for better ASR performance ===
+    cleaned_audio_file = clean_audio_for_google(raw_audio_file)
+
+    # === STEP 6: Transcribe using Google API ===
+    transcribe_with_google(cleaned_audio_file)
+
+
+if __name__ == "__main__":
+    main()
